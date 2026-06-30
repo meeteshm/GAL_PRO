@@ -1,40 +1,35 @@
 //@version=6
 indicator(
-     "GAL PRO V7",
-     shorttitle = "GAL PRO V7",
-     overlay = true,
-     max_labels_count = 500,
-     max_lines_count = 500)
+    "GAL PRO V7.02",
+    shorttitle="GAL PRO",
+    overlay=true,
+    max_labels_count=500,
+    max_lines_count=500)
 
 //==================================================
-// GAL PRO V7
-// PART / MODULE 1 - FOUNDATION
-//==================================================
-
-//==============================
 // INPUTS
-//==============================
+//==================================================
 
-emaLength   = input.int(21, "EMA Length", minval = 1)
-maxWaitBars = input.int(10, "Maximum Breakout Bars", minval = 1)
+emaLength   = input.int(21, "EMA Length", minval=1)
+maxWaitBars = input.int(10, "Maximum Breakout Bars", minval=1)
 
-showEMA   = input.bool(true, "Show EMA")
-showDebug = input.bool(true, "Developer Dashboard")
+showEMA      = input.bool(true, "Show EMA")
+showDashboard = input.bool(true, "Show Dashboard")
 
-//==============================
-// EMA ENGINE
-//==============================
+//==================================================
+// EMA
+//==================================================
 
 ema21 = ta.ema(close, emaLength)
 
 plot(
     showEMA ? ema21 : na,
-    color = color.yellow,
-    linewidth = 2,
-    title = "EMA 21")
+    title="EMA 21",
+    color=color.yellow,
+    linewidth=2)
 
 //==================================================
-// ENGINE STATES
+// STATES
 //==================================================
 
 STATE_IDLE          = 0
@@ -49,95 +44,90 @@ STATE_TRADE_ACTIVE  = 3
 var int state = STATE_IDLE
 
 var bool isBuy = true
-
 var bool tradeActive = false
 
-//----------------------------
-// M02 Cross + Confirmation
-//
-//Cross
-//----------------------------
+//==================================================
+// RENDERER MEMORY
+//==================================================
+
+var bool labelDrawn = false
+//-------------------------
+// Cross
+//-------------------------
 
 var int crossBar = na
-
 var float crossHigh = na
-var float crossLow  = na
+var float crossLow = na
 
-//----------------------------
+//-------------------------
 // Confirmation
-//----------------------------
+//-------------------------
 
 var int confirmBar = na
-
 var float confirmHigh = na
-var float confirmLow  = na
+var float confirmLow = na
 
-//----------------------------
-// Breakout Event M03 
-//----------------------------
+//-------------------------
+// Breakout
+//-------------------------
 
 var bool breakoutTriggered = false
-
 var int breakoutBar = na
-
 var float breakoutPrice = na
 
-//----------------------------
+//-------------------------
 // Trade
-//----------------------------
+//-------------------------
 
 var float entryPrice = na
-
 var float stopLoss = na
 
-//----------------------------
+//-------------------------
 // Waiting
-//----------------------------
+//-------------------------
 
 var int waitBars = 0
 
-//----------------------------
-// Drawing
-//----------------------------
-
-var line entryLine = na
-var line stopLine = na
+//==================================================
+// DRAWING OBJECTS
+//==================================================
 
 var label buyLabel = na
 var label sellLabel = na
 var label exitLabel = na
 
+var line entryLine = na
+var line stopLine = na
+
+var table dbg = table.new(position.top_right, 2, 18)
+
 //==================================================
-// SIGNAL EVENTS
+// RESET REQUEST
 //==================================================
 
-var bool newBuySignal = false
-var bool newSellSignal = false
+var bool doReset = false
 
 //==================================================
 // RESET ENGINE
 //==================================================
-var bool doReset = false
+
 if doReset
+    labelDrawn := false
     state := STATE_IDLE
 
+    isBuy := true
     tradeActive := false
 
-    breakoutTriggered := false
-
-    newBuySignal := false
-    newSellSignal := false
-
     crossBar := na
-    confirmBar := na
-    breakoutBar := na
-
     crossHigh := na
     crossLow := na
 
+    confirmBar := na
     confirmHigh := na
     confirmLow := na
 
+    breakoutTriggered := false
+    breakoutBar := na
     breakoutPrice := na
 
     entryPrice := na
@@ -156,25 +146,14 @@ if doReset
 
     doReset := false
     //==================================================
-// CROSS ENGINE
+// PART 2 - CROSS ENGINE
 //==================================================
-
-// Detect only while idle
-buyCross =
-     state == STATE_IDLE and
-     open < ema21 and
-     close > ema21
-
-sellCross =
-     state == STATE_IDLE and
-     open > ema21 and
-     close < ema21
 
 //--------------------------------------------------
 // BUY CROSS
 //--------------------------------------------------
 
-if buyCross
+if state == STATE_IDLE and open < ema21 and close > ema21
 
     isBuy := true
 
@@ -192,7 +171,7 @@ if buyCross
 // SELL CROSS
 //--------------------------------------------------
 
-if sellCross
+if state == STATE_IDLE and open > ema21 and close < ema21
 
     isBuy := false
 
@@ -205,182 +184,247 @@ if sellCross
     waitBars := 0
 
     state := STATE_WAIT_CONFIRM
-
-//==================================================
-// CONFIRMATION ENGINE
+    //==================================================
+// PART 3 - CONFIRMATION ENGINE
 //==================================================
 
 if state == STATE_WAIT_CONFIRM
 
-    // Must be immediate next candle only
+    // Confirmation must be the immediate next candle
     if bar_index == crossBar + 1
 
-        buyConfirm =
-             isBuy and
-             low > ema21
+        //--------------------------------------------------
+        // BUY CONFIRMATION
+        //--------------------------------------------------
 
-        sellConfirm =
-             (not isBuy) and
-             high < ema21
-
-        if buyConfirm
+        if isBuy and low > ema21
 
             confirmBar := bar_index
             confirmHigh := high
             confirmLow := low
 
+            waitBars := 0
+
             state := STATE_WAIT_BREAKOUT
 
-        else if sellConfirm
+        //--------------------------------------------------
+        // SELL CONFIRMATION
+        //--------------------------------------------------
+
+        else if (not isBuy) and high < ema21
 
             confirmBar := bar_index
             confirmHigh := high
             confirmLow := low
 
+            waitBars := 0
+
             state := STATE_WAIT_BREAKOUT
+
+        //--------------------------------------------------
+        // Invalid confirmation
+        //--------------------------------------------------
 
         else
 
             doReset := true
 
+    //--------------------------------------------------
+    // Missed confirmation candle
+    //--------------------------------------------------
+
     else if bar_index > crossBar + 1
 
         doReset := true
-
-
-        
-    
-//==================================================
-// BREAKOUT ENGINE (M03)
+        //==================================================
+// PART 4 - BREAKOUT ENGINE
 //==================================================
 
+//==================================================
+// TEMP AUTO RESET (Debug)
+//==================================================
+
+if state == STATE_TRADE_ACTIVE
+
+    if bar_index > breakoutBar
+
+        doReset := true
 
 if state == STATE_WAIT_BREAKOUT
 
-    // Cancel setup if EMA is violated
+    //--------------------------------------------------
+    // Cancel if EMA is violated
+    //--------------------------------------------------
+
     if (isBuy and low <= ema21) or ((not isBuy) and high >= ema21)
 
         doReset := true
 
     else
 
+        //--------------------------------------------------
         // BUY BREAKOUT
+        //--------------------------------------------------
+
         if isBuy and high > confirmHigh and low > ema21
 
             breakoutTriggered := true
+
             breakoutBar := bar_index
+
             breakoutPrice := confirmHigh
 
-            entryPrice := confirmHigh
+            entryPrice := close
+
             stopLoss := confirmLow
 
-            newBuySignal := true
-
             tradeActive := true
 
             state := STATE_TRADE_ACTIVE
 
+        //--------------------------------------------------
         // SELL BREAKOUT
-        if (not isBuy) and low < confirmLow and high < ema21
+        //--------------------------------------------------
+
+        else if (not isBuy) and low < confirmLow and high < ema21
 
             breakoutTriggered := true
+
             breakoutBar := bar_index
+
             breakoutPrice := confirmLow
 
-            entryPrice := confirmLow
-            stopLoss := confirmHigh
+            entryPrice := close
 
-            newSellSignal := true
+            stopLoss := confirmHigh
 
             tradeActive := true
 
             state := STATE_TRADE_ACTIVE
 
-        // Wait counter
-        waitBars += 1
+        //--------------------------------------------------
+        // WAIT COUNTER
+        //--------------------------------------------------
 
-        if waitBars > maxWaitBars
-            doReset := true
+        else
 
+            waitBars += 1
 
+            if waitBars > maxWaitBars
+
+                doReset := true
+                //==================================================
+
+            //==================================================
 //==================================================
-// M04 - BUY / SELL RENDERER
-//==================================================
-
-//----------------------------
-// BUY LABEL
-//----------------------------
-if newBuySignal
-
-    buyLabel := label.new(
-         bar_index,
-         low,
-         "BUY",
-         yloc = yloc.belowbar,
-         style = label.style_label_up,
-         color = color.green,
-         textcolor = color.white,
-         size = size.small)
-
-    // One-shot event
-    newBuySignal := false
-
-//----------------------------
-// SELL LABEL
-//----------------------------
-if newSellSignal
-
-    sellLabel := label.new(
-         bar_index,
-         high,
-         "SELL",
-         yloc = yloc.abovebar,
-         style = label.style_label_down,
-         color = color.red,
-         textcolor = color.white,
-         size = size.small)
-
-    // One-shot event
-    newSellSignal := false
-
-        //==================================================
-// DEBUG DASHBOARD
+// PART 5 - RENDERER
 //==================================================
 
-if showDebug
+//==================================================
 
-    var table dbg = table.new(position.top_right, 2, 10)
+if state == STATE_TRADE_ACTIVE and breakoutTriggered and not labelDrawn
+
+    if isBuy
+
+        buyLabel := label.new(
+             x = breakoutBar,
+             y = low,
+             text = "BUY",
+             xloc = xloc.bar_index,
+             yloc = yloc.belowbar,
+             style = label.style_label_up,
+             color = color.green,
+             textcolor = color.white,
+             size = size.small)
+
+    else
+
+        sellLabel := label.new(
+             x = breakoutBar,
+             y = high,
+             text = "SELL",
+             xloc = xloc.bar_index,
+             yloc = yloc.abovebar,
+             style = label.style_label_down,
+             color = color.red,
+             textcolor = color.white,
+             size = size.small)
+
+    labelDrawn := true
+    breakoutTriggered := false
+plotshape(
+     state == STATE_TRADE_ACTIVE and breakoutTriggered and not labelDrawn,
+     title = "Renderer Hit",
+     style = shape.circle,
+     location = location.abovebar,
+     color = color.lime,
+     size = size.small)
+     
+    //==================================================
+// RESET AFTER LABEL
+//==================================================
+
+//if state == STATE_TRADE_ACTIVE and labelDrawn
+
+   // if bar_index > breakoutBar
+       // doReset := true
+//==================================================
+// PART 5 - DEBUG DASHBOARD
+//==================================================
+
+if showDashboard
 
     if barstate.islast
 
-        table.cell(dbg,0,0,"GAL PRO V7")
-        table.cell(dbg,1,0,"CORE")
+        table.cell(dbg, 0, 0, "GAL PRO V7.02")
+        table.cell(dbg, 1, 0, "CORE")
 
-        table.cell(dbg,0,1,"State")
-        table.cell(dbg,1,1,str.tostring(state))
+        table.cell(dbg, 0, 1, "State")
+        table.cell(dbg, 1, 1, str.tostring(state))
 
-        table.cell(dbg,0,2,"Direction")
-        table.cell(dbg,1,2,isBuy ? "BUY" : "SELL")
+        table.cell(dbg, 0, 2, "Direction")
+        table.cell(dbg, 1, 2, isBuy ? "BUY" : "SELL")
 
-        table.cell(dbg,0,3,"Cross")
-        table.cell(dbg,1,3,str.tostring(crossBar))
+        table.cell(dbg, 0, 3, "Cross")
+        table.cell(dbg, 1, 3, str.tostring(crossBar))
 
-        table.cell(dbg,0,4,"Confirm")
-        table.cell(dbg,1,4,str.tostring(confirmBar))
+        table.cell(dbg, 0, 4, "Confirm")
+        table.cell(dbg, 1, 4, str.tostring(confirmBar))
 
-        table.cell(dbg,0,5,"Breakout")
-        table.cell(dbg,1,5,str.tostring(breakoutBar))
+        table.cell(dbg, 0, 5, "Breakout")
+        table.cell(dbg, 1, 5, str.tostring(breakoutBar))
 
-        table.cell(dbg,0,6,"Trade")
-        table.cell(dbg,1,6,str.tostring(tradeActive))
+        table.cell(dbg, 0, 6, "Trade")
+        table.cell(dbg, 1, 6, str.tostring(tradeActive))
 
-        table.cell(dbg,0,7,"Entry")
-        table.cell(dbg,1,7,str.tostring(entryPrice))
+        table.cell(dbg, 0, 7, "Entry")
+        table.cell(dbg, 1, 7, str.tostring(entryPrice))
 
-        table.cell(dbg,0,8,"SL")
-        table.cell(dbg,1,8,str.tostring(stopLoss))
+        table.cell(dbg, 0, 8, "SL")
+        table.cell(dbg, 1, 8, str.tostring(stopLoss))
 
-        table.cell(dbg,0,9,"Wait")
-        table.cell(dbg,1,9,str.tostring(waitBars))
+table.cell(dbg, 0, 14, "BreakoutTrig")
+table.cell(dbg, 1, 14, str.tostring(breakoutTriggered))
 
+table.cell(dbg, 0, 15, "LabelDrawn")
+table.cell(dbg, 1, 15, str.tostring(labelDrawn))
 
+table.cell(dbg, 0, 16, "IsBuy")
+table.cell(dbg, 1, 16, str.tostring(isBuy))
+
+table.cell(dbg, 0, 17, "State")
+table.cell(dbg, 1, 17, str.tostring(state))
+
+table.cell(dbg, 0, 9, "Wait")
+table.cell(dbg, 1, 9, str.tostring(waitBars))
+table.cell(dbg, 0, 10, "Confirm High")
+table.cell(dbg, 1, 10, str.tostring(confirmHigh))
+
+table.cell(dbg, 0, 11, "Confirm Low")
+table.cell(dbg, 1, 11, str.tostring(confirmLow))
+
+table.cell(dbg, 0, 12, "Cross High")
+table.cell(dbg, 1, 12, str.tostring(crossHigh))
+
+table.cell(dbg, 0, 13, "Cross Low")
+table.cell(dbg, 1, 13, str.tostring(crossLow))
